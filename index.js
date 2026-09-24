@@ -3,8 +3,10 @@ const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
 const pino = require('pino');
+const fs = require('fs');
+const path = require('path');
 
-// Servidor HTTP básico para que Render detecte que la app está viva y le dé un puerto
+// Servidor HTTP web para que Render mantenga la app activa en el puerto 10000
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -29,17 +31,39 @@ app.listen(PORT, () => {
     console.log(`Servidor web escuchando en el puerto ${PORT}`);
 });
 
-// Función principal para arrancar Baileys sin Chrome
+// Función auxiliar para leer los archivos de texto de la carpeta 'textos'
+function leerArchivo(nombreArchivo) {
+    try {
+        const ruta = path.join(__dirname, 'textos', nombreArchivo);
+        if (fs.existsSync(ruta)) {
+            return fs.readFileSync(ruta, 'utf8').trim();
+        } else {
+            return "Información en proceso de actualización.";
+        }
+    } catch (error) {
+        console.error("Error leyendo archivo:", error);
+        return "Disculpe, ocurrió un pequeño error al leer la información.";
+    }
+}
+
+// Función para obtener un versículo al azar de versiculos.txt
+function obtenerVersiculoAleatorio() {
+    const contenido = leerArchivo('versiculos.txt');
+    const versiculos = contenido.split('\n').filter(v => v.trim() !== '');
+    if (versiculos.length === 0) return "No hay versículos disponibles por el momento.";
+    const indiceAleatorio = Math.floor(Math.random() * versiculos.length);
+    return versiculos[indiceAleatorio];
+}
+
 async function startBot() {
-    // Guarda la sesión en una carpeta llamada 'auth_info_baileys'
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
-        logger: pino({ level: 'silent' }) // Silencia logs innecesarios para ahorrar memoria
+        logger: pino({ level: 'silent' }) // Silencia logs para ahorrar memoria en Render
     });
 
-    // Manejo de conexión y generación de QR para ver en la web de Render
+    // Manejo de conexión y generación del código QR para la web de Render
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -54,11 +78,10 @@ async function startBot() {
             const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
             console.log('Conexión cerrada. Razón:', reason);
             
-            // Reconectar automáticamente si no fue una desconexión intencional
             if (reason !== DisconnectReason.loggedOut) {
                 startBot();
             } else {
-                console.log('Sesión cerrada manualmente o token inválido. Borra la carpeta auth_info_baileys para reescanear.');
+                console.log('Sesión cerrada manualmente. Borra la carpeta auth_info_baileys para reescanear.');
             }
         } else if (connection === 'open') {
             connectionStatus = 'Conectado';
@@ -67,10 +90,21 @@ async function startBot() {
         }
     });
 
-    // Guardar credenciales cuando se actualicen
     sock.ev.on('creds.update', saveCreds);
 
-    // Escuchar los mensajes entrantes y responder con tu menú y versículos
+    // Función de transición similar a enviarConEscritura
+    async function enviarRespuesta(remoteJid, contenido) {
+        try {
+            await sock.sendMessage(remoteJid, { text: "⏳ Buscando la información..." });
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            await sock.sendMessage(remoteJid, { text: contenido });
+        } catch (error) {
+            console.log("Error al enviar respuesta:", error);
+            await sock.sendMessage(remoteJid, { text: contenido });
+        }
+    }
+
+    // Escuchar los mensajes entrantes con toda la lógica de tus opciones
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
@@ -78,29 +112,76 @@ async function startBot() {
         if (!msg.message || msg.key.fromMe) return;
 
         const remoteJid = msg.key.remoteJid;
-        
-        // Obtener el texto del mensaje (soporta texto plano o botones)
-        const textMessage = msg.message.conversation || 
-                            msg.message.extendedTextMessage?.text || '';
-        
-        const comando = textMessage.trim();
+        const textoUsuario = (msg.message.conversation || 
+                              msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
 
-        // Lógica de respuesta del menú
-        if (comando === '1' || comando.toLowerCase() === 'menu') {
-            await sock.sendMessage(remoteJid, { 
-                text: 'Menú principal:\n1. Ver características del Reino\n2. Versículo del día\n3. Información de ayuda' 
-            });
-        } 
-        else if (comando === '2') {
-            await sock.sendMessage(remoteJid, { 
-                text: 'Versículo bíblico: "Lámpara es a mis pies tu palabra, y lumbrera a mi camino." (Salmos 119:105)' 
-            });
+        console.log(`Mensaje recibido de ${remoteJid}: ${textoUsuario}`);
+
+        // Menú principal
+        if (textoUsuario === 'hola' || textoUsuario === 'menu' || textoUsuario === '0' || textoUsuario === 'regresar') {
+            const textoMenu = leerArchivo('menu.txt');
+            await enviarRespuesta(remoteJid, textoMenu);
+            return;
         }
-        else if (comando === '3') {
-            await sock.sendMessage(remoteJid, { 
-                text: 'Escribe "1" para ver el menú principal o "2" para recibir un versículo.' 
-            });
+
+        // Opción 1: Actividades
+        if (textoUsuario === '1') {
+            const textoActividad = leerArchivo('actividades.txt');
+            const respuesta1 = `${textoActividad}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
+            await enviarRespuesta(remoteJid, respuesta1);
+            return;
         }
+
+        // Opción 2: Colaboración
+        if (textoUsuario === '2') {
+            const textoColab = leerArchivo('colaboracion.txt');
+            const respuesta2 = `${textoColab}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
+            await enviarRespuesta(remoteJid, respuesta2);
+            return;
+        }
+
+        // Opción 3: Palabra de aliento (versículo al azar)
+        if (textoUsuario === '3') {
+            const versiculoDelDia = obtenerVersiculoAleatorio();
+            const respuesta3 = `📖 *Palabra de Aliento para Hoy*\n\n${versiculoDelDia}\n\nRecuerde que usted es una persona muy valiosa y especial para el Señor y para nosotros. ¡Dios le bendiga grande y ricamente hoy! ✨\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
+            await enviarRespuesta(remoteJid, respuesta3);
+            return;
+        }
+
+        // Opción 4: Contacto humano
+        if (textoUsuario === '4') {
+            const textoTelefonos = leerArchivo('contacto_telefonos.txt');
+            const respuesta4 = `${textoTelefonos}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
+            await enviarRespuesta(remoteJid, respuesta4);
+            return;
+        }
+
+        // Opción 5: Audio especial (saludo.mp4)
+        if (textoUsuario === '5') {
+            await enviarRespuesta(remoteJid, "🎵 Con mucho cariño, aquí le compartimos este audio:");
+            try {
+                const audioPath = path.join(__dirname, 'audios', 'saludo.mp4');
+                if (fs.existsSync(audioPath)) {
+                    const audioBuffer = fs.readFileSync(audioPath);
+                    await sock.sendMessage(remoteJid, { 
+                        audio: audioBuffer, 
+                        mimetype: 'audio/mp4', 
+                        ptt: false 
+                    });
+                } else {
+                    await sock.sendMessage(remoteJid, { text: "Disculpe, el archivo de audio no se encuentra disponible en este momento." });
+                }
+            } catch (error) {
+                console.log("Error al enviar el audio:", error);
+                await sock.sendMessage(remoteJid, { text: "Disculpe, ocurrió un error al enviar el audio." });
+            }
+            await sock.sendMessage(remoteJid, { text: "-------------------\n👉 *Para volver al menú principal, escriba el número* **0**" });
+            return;
+        }
+
+        // Si escriben cualquier otra cosa
+        const textoError = leerArchivo('error.txt');
+        await enviarRespuesta(remoteJid, textoError);
     });
 }
 
