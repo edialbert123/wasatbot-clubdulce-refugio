@@ -1,3 +1,16 @@
+const http = require('http');
+
+// Creamos un servidor web simple para que Render detecte un puerto abierto y no cierre el bot
+const server = http.createServer((req, res) => {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    res.end('Bot de WhatsApp activo y funcionando!\n');
+});
+
+const PORT = process.env.PORT || 3000;
+server.listen(PORT, () => {
+    console.log(`Servidor web escuchando en el puerto ${PORT}`);
+});
+
 const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
 const qrcode = require('qrcode-terminal');
 const fs = require('fs');
