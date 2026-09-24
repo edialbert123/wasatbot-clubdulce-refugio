@@ -1,10 +1,98 @@
-const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require('@whisockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
+const { Pool } = require('pg');
+
+// Configuración de la conexión a Supabase (PostgreSQL)
+// RECUERDA reemplazar [YOUR-PASSWORD] con tu contraseña real de Supabase
+const pool = new Pool({
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:[YOUR-PASSWORD]@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
+    ssl: { rejectUnauthorized: false }
+});
+
+// Función de autenticación personalizada usando PostgreSQL (Supabase)
+async function usePostgresAuthState() {
+    // Crear la tabla si no existe
+    await pool.query(`
+        CREATE TABLE IF NOT EXISTS baileys_auth (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        );
+    `);
+
+    const readData = async (key) => {
+        try {
+            const { rows } = await pool.query('SELECT value FROM baileys_auth WHERE key = $1', [key]);
+            if (rows.length === 0) return null;
+            return JSON.parse(rows[0].value, BufferJSON.reviver);
+        } catch (error) {
+            console.error(`Error leyendo ${key} de postgres:`, error);
+            return null;
+        }
+    };
+
+    const writeData = async (key, data) => {
+        try {
+            const jsonString = JSON.stringify(data, BufferJSON.replacer);
+            await pool.query(`
+                INSERT INTO baileys_auth (key, value) 
+                VALUES ($1, $2) 
+                ON CONFLICT (key) 
+                DO UPDATE SET value = EXCLUDED.value;
+            `, [key, jsonString]);
+        } catch (error) {
+            console.error(`Error escribiendo ${key} en postgres:`, error);
+        }
+    };
+
+    const removeData = async (key) => {
+        try {
+            await pool.query('DELETE FROM baileys_auth WHERE key = $1', [key]);
+        } catch (error) {
+            console.error(`Error borrando ${key} de postgres:`, error);
+        }
+    };
+
+    const creds = await readData('creds') || initAuthCreds();
+
+    return {
+        state: {
+            creds,
+            keys: {
+                get: async (type, ids) => {
+                    const data = {};
+                    for (const id of ids) {
+                        let value = await readData(`${type}-${id}`);
+                        if (type === 'app-state-sync-key' && value) {
+                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
+                        }
+                        data[id] = value;
+                    }
+                    return data;
+                },
+                set: async (data) => {
+                    for (const category of Object.keys(data)) {
+                        for (const id of Object.keys(data[category])) {
+                            const value = data[category][id];
+                            if (value) {
+                                await writeData(`${category}-${id}`, value);
+                            } else {
+                                await removeData(`${category}-${id}`);
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        saveCreds: async () => {
+            await writeData('creds', creds);
+        }
+    };
+}
 
 // Servidor HTTP web para que Render mantenga la app activa en el puerto 10000
 const app = express();
@@ -15,7 +103,7 @@ let connectionStatus = 'Desconectado';
 
 app.get('/', (req, res) => {
     if (connectionStatus === 'Conectado') {
-        res.send('<h1>¡El bot de WhatsApp está Conectado y funcionando!</h1>');
+        res.send('<h1>¡El bot de WhatsApp está Conectado y funcionando en la nube!</h1>');
     } else if (qrCodeData) {
         res.send(`
             <h1>Escanea el Código QR para conectar el Bot</h1>
@@ -56,7 +144,7 @@ function obtenerVersiculoAleatorio() {
 }
 
 async function startBot() {
-    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
+    const { state, saveCreds } = await usePostgresAuthState();
 
     const sock = makeWASocket({
         auth: state,
@@ -81,12 +169,12 @@ async function startBot() {
             if (reason !== DisconnectReason.loggedOut) {
                 startBot();
             } else {
-                console.log('Sesión cerrada manualmente. Borra la carpeta auth_info_baileys para reescanear.');
+                console.log('Sesión cerrada manualmente.');
             }
         } else if (connection === 'open') {
             connectionStatus = 'Conectado';
             qrCodeData = '';
-            console.log('¡Bot conectado a WhatsApp exitosamente!');
+            console.log('¡Bot conectado a WhatsApp exitosamente y guardado en Supabase!');
         }
     });
 
