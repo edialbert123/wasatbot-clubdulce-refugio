@@ -4,7 +4,11 @@ const fs = require('fs');
 const path = require('path');
 
 const client = new Client({
-    authStrategy: new LocalAuth()
+    authStrategy: new LocalAuth(),
+    puppeteer: {
+        executablePath: '/usr/bin/chromium',
+        args: ['--no-sandbox', '--disable-setuid-sandbox']
+    }
 });
 
 // Función optimizada: Envía un aviso primero para forzar la vista y luego la respuesta real
