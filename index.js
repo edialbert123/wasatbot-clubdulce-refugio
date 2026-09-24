@@ -10,7 +10,7 @@ const { Pool } = require('pg');
 // Configuración de la conexión a Supabase (PostgreSQL)
 // RECUERDA reemplazar [YOUR-PASSWORD] con tu contraseña real de Supabase
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:6543/postgres',
+    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
     ssl: { rejectUnauthorized: false }
 });
 
