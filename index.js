@@ -1,174 +1,107 @@
-const http = require('http');
+const { default: makeWASocket, useMultiFileAuthState, DisconnectReason } = require('@whiskeysockets/baileys');
+const { Boom } = require('@hapi/boom');
+const express = require('express');
+const qrcode = require('qrcode');
+const pino = require('pino');
 
-let ultimoQR = ''; // Variable para guardar el QR activo
+// Servidor HTTP básico para que Render detecte que la app está viva y le dé un puerto
+const app = express();
+const PORT = process.env.PORT || 10000;
 
-// Creamos un servidor web que muestra el QR limpio si abres el enlace en el navegador
-const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
-    if (ultimoQR) {
-        res.end(`
-            <html>
-                <head><title>Vinculación de WhatsApp</title></head>
-                <body style="text-align:center; font-family:sans-serif; margin-top:50px;">
-                    <h2>Escanea este código QR para conectar tu Bot</h2>
-                    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
-                    <div id="qrcode" style="display:inline-block;"></div>
-                    <script>
-                        new QRCode(document.getElementById("qrcode"), {
-                            text: "${ultimoQR}",
-                            width: 300,
-                            height: 300
-                        });
-                    </script>
-                    <p>Actualiza la página si el código expira.</p>
-                </body>
-            </html>
+let qrCodeData = '';
+let connectionStatus = 'Desconectado';
+
+app.get('/', (req, res) => {
+    if (connectionStatus === 'Conectado') {
+        res.send('<h1>¡El bot de WhatsApp está Conectado y funcionando!</h1>');
+    } else if (qrCodeData) {
+        res.send(`
+            <h1>Escanea el Código QR para conectar el Bot</h1>
+            <img src="${qrCodeData}" alt="Código QR de WhatsApp" style="width:300px;height:300px;" />
+            <p>Actualiza la página si el código expira.</p>
         `);
     } else {
-        res.end('<h1>El bot está iniciando o ya está conectado. Si ya se conectó, esta página se verá en blanco.</h1>');
+        res.send('<h1>Generando el código QR, por favor espera unos segundos y recarga la página...</h1>');
     }
 });
 
-const PORT = process.env.PORT || 3000;
-server.listen(PORT, () => {
+app.listen(PORT, () => {
     console.log(`Servidor web escuchando en el puerto ${PORT}`);
 });
 
-const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
-const qrcode = require('qrcode-terminal');
-const fs = require('fs');
-const path = require('path');
+// Función principal para arrancar Baileys sin Chrome
+async function startBot() {
+    // Guarda la sesión en una carpeta llamada 'auth_info_baileys'
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
-const client = new Client({
-    authStrategy: new LocalAuth(),
-    puppeteer: {
-        headless: true,
-        args: [
-            '--no-sandbox', 
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-gpu'
-        ]
-    }
-});
+    const sock = makeWASocket({
+        auth: state,
+        logger: pino({ level: 'silent' }) // Silencia logs innecesarios para ahorrar memoria
+    });
 
-// Función optimizada: Envía un aviso primero para forzar la vista y luego la respuesta real
-async function enviarConEscritura(msg, remitente, contenido) {
-    try {
-        // 1. Mensaje corto de transición para obligar a la pantalla a registrar actividad
-        await client.sendMessage(remitente, "⏳ Buscando la información...");
-        
-        // 2. Pausa breve de 1.5 segundos para dar tiempo a la interfaz
-        await new Promise(resolve => setTimeout(resolve, 1500)); 
-        
-        // 3. Enviamos la respuesta real citando el mensaje del usuario
-        await msg.reply(contenido);
-    } catch (error) {
-        console.log("Error en enviarConEscritura:", error);
-        await client.sendMessage(remitente, contenido);
-    }
-}
+    // Manejo de conexión y generación de QR para ver en la web de Render
+    sock.ev.on('connection.update', async (update) => {
+        const { connection, lastDisconnect, qr } = update;
 
-// Función auxiliar para leer los archivos de texto
-function leerArchivo(nombreArchivo) {
-    try {
-        const ruta = path.join(__dirname, 'textos', nombreArchivo);
-        if (fs.existsSync(ruta)) {
-            return fs.readFileSync(ruta, 'utf8').trim();
-        } else {
-            return "Información en proceso de actualización.";
+        if (qr) {
+            console.log('¡Nuevo QR generado!');
+            qrCodeData = await qrcode.toDataURL(qr);
+            connectionStatus = 'Esperando escaneo de QR';
         }
-    } catch (error) {
-        console.error("Error leyendo archivo:", error);
-        return "Disculpe, ocurrió un pequeño error al leer la información.";
-    }
-}
 
-// Función para obtener un versículo al azar
-function obtenerVersiculoAleatorio() {
-    const contenido = leerArchivo('versiculos.txt');
-    const versiculos = contenido.split('\n').filter(v => v.trim() !== '');
-    if (versiculos.length === 0) return "No hay versículos disponibles por el momento.";
-    const indiceAleatorio = Math.floor(Math.random() * versiculos.length);
-    return versiculos[indiceAleatorio];
-}
-
-client.on('qr', (qr) => {
-    ultimoQR = qr; // Guarda el QR fresco para la página web
-    console.log('¡Nuevo QR generado! Abre la URL de tu app en el navegador para escanearlo limpio.');
-    qrcode.generate(qr, { small: true });
-});
-
-client.on('ready', () => {
-    console.log('¡El bot está listo, ordenado en archivos y con audio integrado!');
-});
-
-client.on('message', async msg => {
-    const textoUsuario = msg.body.trim().toLowerCase();
-    const remitente = msg.from;
-
-    console.log(`Mensaje recibido de ${remitente}: ${msg.body}`);
-
-    // Menú principal (Lee de menu.txt)
-    if (textoUsuario === 'hola' || textoUsuario === 'menu' || textoUsuario === '0' || textoUsuario === 'regresar') {
-        const textoMenu = leerArchivo('menu.txt');
-        await enviarConEscritura(msg, remitente, textoMenu);
-        return;
-    }
-
-    // Opción 1: Actividades (Lee de actividades.txt)
-    if (textoUsuario === '1') {
-        const textoActividad = leerArchivo('actividades.txt');
-        const respuesta1 = `${textoActividad}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
-        await enviarConEscritura(msg, remitente, respuesta1);
-        return;
-    }
-
-    // Opción 2: Colaboración (Lee de colaboracion.txt)
-    if (textoUsuario === '2') {
-        const textoColab = leerArchivo('colaboracion.txt');
-        const respuesta2 = `${textoColab}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
-        await enviarConEscritura(msg, remitente, respuesta2);
-        return;
-    }
-
-    // Opción 3: Palabra de aliento (Elige al azar de versiculos.txt)
-    if (textoUsuario === '3') {
-        const versiculoDelDia = obtenerVersiculoAleatorio();
-        const respuesta3 = `📖 *Palabra de Aliento para Hoy*\n\n${versiculoDelDia}\n\nRecuerde que usted es una persona muy valiosa y especial para el Señor y para nosotros. ¡Dios le bendiga grande y ricamente hoy! ✨\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
-        await enviarConEscritura(msg, remitente, respuesta3);
-        return;
-    }
-
-    // Opción 4: Contacto humano con números directos (Lee de contacto_telefonos.txt)
-    if (textoUsuario === '4') {
-        const textoTelefonos = leerArchivo('contacto_telefonos.txt');
-        const respuesta4 = `${textoTelefonos}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
-        await enviarConEscritura(msg, remitente, respuesta4);
-        return;
-    }
-
-    // Opción 5: Audio especial (Envía saludo.mp4)
-    if (textoUsuario === '5') {
-        await enviarConEscritura(msg, remitente, "🎵 Con mucho cariño, aquí le compartimos este audio:");
-        try {
-            const audioMensaje = MessageMedia.fromFilePath(path.join(__dirname, 'audios', 'saludo.mp4'));
-            await msg.reply(audioMensaje);
-        } catch (error) {
-            console.log("Error al enviar el audio:", error);
-            await enviarConEscritura(msg, remitente, "Disculpe, el archivo de audio no se encuentra disponible en este momento.");
+        if (connection === 'close') {
+            connectionStatus = 'Desconectado';
+            const reason = new Boom(lastDisconnect?.error)?.output?.statusCode;
+            console.log('Conexión cerrada. Razón:', reason);
+            
+            // Reconectar automáticamente si no fue una desconexión intencional
+            if (reason !== DisconnectReason.loggedOut) {
+                startBot();
+            } else {
+                console.log('Sesión cerrada manualmente o token inválido. Borra la carpeta auth_info_baileys para reescanear.');
+            }
+        } else if (connection === 'open') {
+            connectionStatus = 'Conectado';
+            qrCodeData = '';
+            console.log('¡Bot conectado a WhatsApp exitosamente!');
         }
-        await enviarConEscritura(msg, remitente, "-------------------\n👉 *Para volver al menú principal, escriba el número* **0**");
-        return;
-    }
+    });
 
-    // Si escriben otra cosa (Lee de error.txt)
-    const textoError = leerArchivo('error.txt');
-    await enviarConEscritura(msg, remitente, textoError);
-});
+    // Guardar credenciales cuando se actualicen
+    sock.ev.on('creds.update', saveCreds);
 
-client.initialize();
+    // Escuchar los mensajes entrantes y responder con tu menú y versículos
+    sock.ev.on('messages.upsert', async ({ messages, type }) => {
+        if (type !== 'notify') return;
+
+        const msg = messages[0];
+        if (!msg.message || msg.key.fromMe) return;
+
+        const remoteJid = msg.key.remoteJid;
+        
+        // Obtener el texto del mensaje (soporta texto plano o botones)
+        const textMessage = msg.message.conversation || 
+                            msg.message.extendedTextMessage?.text || '';
+        
+        const comando = textMessage.trim();
+
+        // Lógica de respuesta del menú
+        if (comando === '1' || comando.toLowerCase() === 'menu') {
+            await sock.sendMessage(remoteJid, { 
+                text: 'Menú principal:\n1. Ver características del Reino\n2. Versículo del día\n3. Información de ayuda' 
+            });
+        } 
+        else if (comando === '2') {
+            await sock.sendMessage(remoteJid, { 
+                text: 'Versículo bíblico: "Lámpara es a mis pies tu palabra, y lumbrera a mi camino." (Salmos 119:105)' 
+            });
+        }
+        else if (comando === '3') {
+            await sock.sendMessage(remoteJid, { 
+                text: 'Escribe "1" para ver el menú principal o "2" para recibir un versículo.' 
+            });
+        }
+    });
+}
+
+startBot();
