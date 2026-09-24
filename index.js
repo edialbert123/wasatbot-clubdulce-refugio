@@ -1,4 +1,4 @@
-const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require('@whisockets/baileys');
+const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
