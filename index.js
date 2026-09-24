@@ -1,9 +1,32 @@
 const http = require('http');
 
-// Creamos un servidor web simple para que Render detecte un puerto abierto y no cierre el bot
+let ultimoQR = ''; // Variable para guardar el QR activo
+
+// Creamos un servidor web que muestra el QR limpio si abres el enlace en el navegador
 const server = http.createServer((req, res) => {
-    res.writeHead(200, { 'Content-Type': 'text/plain' });
-    res.end('Bot de WhatsApp activo y funcionando!\n');
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
+    if (ultimoQR) {
+        res.end(`
+            <html>
+                <head><title>Vinculación de WhatsApp</title></head>
+                <body style="text-align:center; font-family:sans-serif; margin-top:50px;">
+                    <h2>Escanea este código QR para conectar tu Bot</h2>
+                    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+                    <div id="qrcode" style="display:inline-block;"></div>
+                    <script>
+                        new QRCode(document.getElementById("qrcode"), {
+                            text: "${ultimoQR}",
+                            width: 300,
+                            height: 300
+                        });
+                    </script>
+                    <p>Actualiza la página si el código expira.</p>
+                </body>
+            </html>
+        `);
+    } else {
+        res.end('<h1>El bot está iniciando o ya está conectado. Si ya se conectó, esta página se verá en blanco.</h1>');
+    }
 });
 
 const PORT = process.env.PORT || 3000;
@@ -75,7 +98,8 @@ function obtenerVersiculoAleatorio() {
 }
 
 client.on('qr', (qr) => {
-    console.log('Escanea este código QR con el WhatsApp de la línea del bot:');
+    ultimoQR = qr; // Guarda el QR fresco para la página web
+    console.log('¡Nuevo QR generado! Abre la URL de tu app en el navegador para escanearlo limpio.');
     qrcode.generate(qr, { small: true });
 });
 
