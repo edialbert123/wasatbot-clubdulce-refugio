@@ -11,7 +11,8 @@ const { Pool } = require('pg');
 // RECUERDA reemplazar [YOUR-PASSWORD] con tu contraseña real de Supabase
 const pool = new Pool({
     connectionString: process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
-    ssl: { rejectUnauthorized: false }
+    ssl: { rejectUnauthorized: false },
+    family: 4
 });
 
 // Función de autenticación personalizada usando PostgreSQL (Supabase)
