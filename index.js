@@ -1,4 +1,4 @@
-const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require('@whiskeysockets/baileys');
+const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require('@whisockets/baileys');
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
@@ -7,10 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
-// Configuración de la conexión a Supabase (PostgreSQL)
-// RECUERDA reemplazar [YOUR-PASSWORD] con tu contraseña real de Supabase
+// Configuración de la conexión a Supabase (PostgreSQL) forzando IPv4
 const pool = new Pool({
-    connectionString: process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
+    connectionString: 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
     ssl: { rejectUnauthorized: false },
     family: 4
 });
@@ -116,9 +115,7 @@ app.get('/', (req, res) => {
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Servidor web escuchando en el puerto ${PORT}`);
-});
+app.listen(PORT, () => console.log(`Servidor web escuchando en el puerto ${PORT}`));
 
 // Función auxiliar para leer los archivos de texto de la carpeta 'textos'
 function leerArchivo(nombreArchivo) {
@@ -149,6 +146,7 @@ async function startBot() {
 
     const sock = makeWASocket({
         auth: state,
+        printQRInTerminal: true,
         logger: pino({ level: 'silent' }) // Silencia logs para ahorrar memoria en Render
     });
 
@@ -202,7 +200,7 @@ async function startBot() {
 
         const remoteJid = msg.key.remoteJid;
         const textoUsuario = (msg.message.conversation || 
-                              msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
+                            msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
 
         console.log(`Mensaje recibido de ${remoteJid}: ${textoUsuario}`);
 
