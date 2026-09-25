@@ -7,9 +7,9 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
-// Configuración de la conexión a Supabase (PostgreSQL) forzando IPv4
+// Configuración de la conexión a Supabase forzando IP y puerto directo
 const pool = new Pool({
-    connectionString: 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres',
+    connectionString: 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres?sslmode=no-verify',
     ssl: { rejectUnauthorized: false },
     family: 4
 });
