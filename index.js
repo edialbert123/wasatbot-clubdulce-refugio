@@ -1,5 +1,5 @@
 const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require("@whiskeysockets/baileys");
-    const { Boom } = require('@hapi/boom');
+const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
 const pino = require('pino');
@@ -7,9 +7,13 @@ const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
 
-// Configuración de la conexión a Supabase forzando IP y puerto directo
+// Configuración estricta de la base de datos separada para forzar IPv4 real
 const pool = new Pool({
-    connectionString: 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:5432/postgres?sslmode=no-verify',
+    host: 'db.miksinnxsphcwhabtxmc.supabase.co',
+    database: 'postgres',
+    user: 'postgres',
+    password: 'yerartyerot',
+    port: 5432,
     ssl: { rejectUnauthorized: false },
     family: 4
 });
