@@ -6,16 +6,20 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const dns = require('dns'); // <--- 1. Agregamos esto aquí arriba
 
-// Configuración estricta de la base de datos separada para forzar IPv4 real
+// Configuración estricta de la base de datos con el filtro DNS para bloquear IPv6
 const pool = new Pool({
     host: 'db.miksinnxsphcwhabtxmc.supabase.co',
     database: 'postgres',
     user: 'postgres',
-    password: 'yerartyerot',
+    password: 'yerartyerot', // o maracucha, asegúrate de dejar la clave que tengas guardada en Supabase
     port: 5432,
     ssl: { rejectUnauthorized: false },
-    family: 4
+    lookup: (hostname, options, callback) => {
+        options.family = 4; // Esto bloquea cualquier intento de usar IPv6
+        dns.lookup(hostname, options, callback);
+    }
 });
 
 // Función de autenticación personalizada usando PostgreSQL (Supabase)
