@@ -6,21 +6,39 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const dns = require('dns'); // <--- 1. Agregamos esto aquí arriba
+const dns = require('dns').promises;
 
-// Configuración estricta de la base de datos con el filtro DNS para bloquear IPv6
-const pool = new Pool({
-    host: 'db.miksinnxsphcwhabtxmc.supabase.co',
-    database: 'postgres',
-    user: 'postgres',
-    password: 'yerartyerot', // o maracucha, asegúrate de dejar la clave que tengas guardada en Supabase
-    port: 5432,
-    ssl: { rejectUnauthorized: false },
-    lookup: (hostname, options, callback) => {
-        options.family = 4; // Esto bloquea cualquier intento de usar IPv6
-        dns.lookup(hostname, options, callback);
+let pool;
+
+// Función para inicializar la conexión resolviendo estrictamente a IPv4
+async function initDatabase() {
+    try {
+        console.log('Resolviendo dirección IPv4 de Supabase para evitar el bloqueo de Render...');
+        const addresses = await dns.resolve4('db.miksinnxsphcwhabtxmc.supabase.co');
+        const ipv4Host = addresses[0];
+        console.log(`¡IP IPv4 obtenida con éxito: ${ipv4Host}!`);
+
+        pool = new Pool({
+            host: ipv4Host,
+            database: 'postgres',
+            user: 'postgres',
+            password: 'yerartyerot',
+            port: 5432,
+            ssl: { rejectUnauthorized: false }
+        });
+    } catch (error) {
+        console.error('Error al resolver la IP, usando respaldo directo:', error);
+        pool = new Pool({
+            host: 'db.miksinnxsphcwhabtxmc.supabase.co',
+            database: 'postgres',
+            user: 'postgres',
+            password: 'marachacucha',
+            port: 5432,
+            ssl: { rejectUnauthorized: false },
+            family: 4
+        });
     }
-});
+}
 
 // Función de autenticación personalizada usando PostgreSQL (Supabase)
 async function usePostgresAuthState() {
@@ -150,6 +168,11 @@ function obtenerVersiculoAleatorio() {
 }
 
 async function startBot() {
+    // Asegurarnos de que la base de datos esté lista con IPv4 antes de iniciar Baileys
+    if (!pool) {
+        await initDatabase();
+    }
+
     const { state, saveCreds } = await usePostgresAuthState();
 
     const sock = makeWASocket({
