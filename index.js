@@ -1,106 +1,10 @@
-const { default: makeWASocket, DisconnectReason, initAuthCreds, BufferJSON } = require("@whiskeysockets/baileys");
+const { default: makeWASocket, DisconnectReason, useMultiFileAuthState } = require("@whiskeysockets/baileys");
 const { Boom } = require('@hapi/boom');
 const express = require('express');
 const qrcode = require('qrcode');
 const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
-const { Pool } = require('pg');
-
-// 🔐 COLOCA AQUÍ TU CONTRASEÑA REAL DE SUPABASE (reemplaza [TU-PASSWORD])
-// O también puedes dejarlo leyendo la variable de entorno process.env.DATABASE_URL si la configuras en Render
-const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:6543/postgres';
-
-const pool = new Pool({
-    connectionString,
-    ssl: { rejectUnauthorized: false }
-});
-
-// Función para verificar la conexión a la base de datos
-async function initDatabase() {
-    try {
-        await pool.query('SELECT NOW()');
-        console.log('¡Conexión exitosa con la base de datos de Supabase!');
-    } catch (error) {
-        console.error('Error al conectar con la base de datos:', error.message);
-    }
-}
-
-// Función de autenticación personalizada usando PostgreSQL (Supabase)
-async function usePostgresAuthState() {
-    await pool.query(`
-        CREATE TABLE IF NOT EXISTS baileys_auth (
-            key TEXT PRIMARY KEY,
-            value TEXT
-        );
-    `);
-
-    const readData = async (key) => {
-        try {
-            const { rows } = await pool.query('SELECT value FROM baileys_auth WHERE key = $1', [key]);
-            if (rows.length === 0) return null;
-            return JSON.parse(rows[0].value, BufferJSON.reviver);
-        } catch (error) {
-            console.error(`Error leyendo ${key} de postgres:`, error);
-            return null;
-        }
-    };
-
-    const writeData = async (key, data) => {
-        try {
-            const jsonString = JSON.stringify(data, BufferJSON.replacer);
-            await pool.query(`
-                INSERT INTO baileys_auth (key, value) 
-                VALUES ($1, $2) 
-                ON CONFLICT (key) 
-                DO UPDATE SET value = EXCLUDED.value;
-            `, [key, jsonString]);
-        } catch (error) {
-            console.error(`Error escribiendo ${key} en postgres:`, error);
-        }
-    };
-
-    const removeData = async (key) => {
-        try {
-            await pool.query('DELETE FROM baileys_auth WHERE key = $1', [key]);
-        } catch (error) {
-            console.error(`Error borrando ${key} de postgres:`, error);
-        }
-    };
-
-    const creds = await readData('creds') || initAuthCreds();
-
-    return {
-        state: {
-            creds,
-            keys: {
-                get: async (type, ids) => {
-                    const data = {};
-                    for (const id of ids) {
-                        let value = await readData(`${type}-${id}`);
-                        data[id] = value;
-                    }
-                    return data;
-                },
-                set: async (data) => {
-                    for (const category of Object.keys(data)) {
-                        for (const id of Object.keys(data[category])) {
-                            const value = data[category][id];
-                            if (value) {
-                                await writeData(`${category}-${id}`, value);
-                            } else {
-                                await removeData(`${category}-${id}`);
-                            }
-                        }
-                    }
-                }
-            }
-        },
-        saveCreds: async () => {
-            await writeData('creds', creds);
-        }
-    };
-}
 
 // Servidor web Express para Render
 const app = express();
@@ -154,9 +58,8 @@ function obtenerVersiculoAleatorio() {
 }
 
 async function startBot() {
-    await initDatabase();
-
-    const { state, saveCreds } = await usePostgresAuthState();
+    // Usamos almacenamiento local de sesión (auth_info_baileys) en lugar de Supabase
+    const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
 
     const sock = makeWASocket({
         auth: state,
@@ -186,7 +89,7 @@ async function startBot() {
         } else if (connection === 'open') {
             connectionStatus = 'Conectado';
             qrCodeData = '';
-            console.log('¡Bot conectado a WhatsApp exitosamente y guardado en Supabase!');
+            console.log('¡Bot conectado a WhatsApp exitosamente!');
         }
     });
 
