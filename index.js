@@ -6,43 +6,32 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const dns = require('dns').promises;
 
 let pool;
 
-// Función para inicializar la conexión resolviendo estrictamente a IPv4
+// Inicializar la conexión a Supabase usando el Pooler (Puerto 6543) y forzando IPv4
 async function initDatabase() {
     try {
-        console.log('Resolviendo dirección IPv4 de Supabase para evitar el bloqueo de Render...');
-        const addresses = await dns.resolve4('db.miksinnxsphcwhabtxmc.supabase.co');
-        const ipv4Host = addresses[0];
-        console.log(`¡IP IPv4 obtenida con éxito: ${ipv4Host}!`);
-
-        pool = new Pool({
-            host: ipv4Host,
-            database: 'postgres',
-            user: 'postgres',
-            password: 'yerartyerot',
-            port: 5432,
-            ssl: { rejectUnauthorized: false }
-        });
-    } catch (error) {
-        console.error('Error al resolver la IP, usando respaldo directo:', error);
+        console.log('Conectando a Supabase mediante el Pooler (Puerto 6543)...');
         pool = new Pool({
             host: 'db.miksinnxsphcwhabtxmc.supabase.co',
             database: 'postgres',
             user: 'postgres',
-            password: 'yerartyerot', // Corregido el error tipográfico del respaldo
-            port: 5432,
+            password: process.env.DB_PASSWORD || 'yerartyerot', // Reemplaza aquí con tu contraseña real o usa variables de entorno en Render
+            port: 6543, // Puerto pooler para evitar bloqueos en Render
             ssl: { rejectUnauthorized: false },
-            family: 4
+            family: 4 // Fuerza IPv4 y evita ENETUNREACH
         });
+
+        await pool.query('SELECT NOW()');
+        console.log('¡Conexión exitosa con la base de datos de Supabase!');
+    } catch (error) {
+        console.error('Error al conectar con la base de datos:', error.message);
     }
 }
 
 // Función de autenticación personalizada usando PostgreSQL (Supabase)
 async function usePostgresAuthState() {
-    // Crear la tabla si no existe
     await pool.query(`
         CREATE TABLE IF NOT EXISTS baileys_auth (
             key TEXT PRIMARY KEY,
@@ -93,9 +82,6 @@ async function usePostgresAuthState() {
                     const data = {};
                     for (const id of ids) {
                         let value = await readData(`${type}-${id}`);
-                        if (type === 'app-state-sync-key' && value) {
-                            value = proto.Message.AppStateSyncKeyData.fromObject(value);
-                        }
                         data[id] = value;
                     }
                     return data;
@@ -120,7 +106,7 @@ async function usePostgresAuthState() {
     };
 }
 
-// Servidor HTTP web para que Render mantenga la app activa en el puerto 10000
+// Servidor web Express para Render
 const app = express();
 const PORT = process.env.PORT || 10000;
 
@@ -132,9 +118,14 @@ app.get('/', (req, res) => {
         res.send('<h1>¡El bot de WhatsApp está Conectado y funcionando en la nube!</h1>');
     } else if (qrCodeData) {
         res.send(`
-            <h1>Escanea el Código QR para conectar el Bot</h1>
-            <img src="${qrCodeData}" alt="Código QR de WhatsApp" style="width:300px;height:300px;" />
-            <p>Actualiza la página si el código expira.</p>
+            <html>
+                <head><title>Vinculación de WhatsApp</title></head>
+                <body style="text-align:center; font-family:sans-serif; margin-top:50px;">
+                    <h2>Escanea el Código QR para conectar el Bot</h2>
+                    <img src="${qrCodeData}" alt="Código QR de WhatsApp" style="width:300px;height:300px;" />
+                    <p>Actualiza la página si el código expira.</p>
+                </body>
+            </html>
         `);
     } else {
         res.send('<h1>Generando el código QR, por favor espera unos segundos y recarga la página...</h1>');
@@ -143,7 +134,7 @@ app.get('/', (req, res) => {
 
 app.listen(PORT, () => console.log(`Servidor web escuchando en el puerto ${PORT}`));
 
-// Función auxiliar para leer los archivos de texto de la carpeta 'textos'
+// Funciones de lectura de archivos y lógica del bot
 function leerArchivo(nombreArchivo) {
     try {
         const ruta = path.join(__dirname, 'textos', nombreArchivo);
@@ -158,7 +149,6 @@ function leerArchivo(nombreArchivo) {
     }
 }
 
-// Función para obtener un versículo al azar de versiculos.txt
 function obtenerVersiculoAleatorio() {
     const contenido = leerArchivo('versiculos.txt');
     const versiculos = contenido.split('\n').filter(v => v.trim() !== '');
@@ -168,7 +158,6 @@ function obtenerVersiculoAleatorio() {
 }
 
 async function startBot() {
-    // Asegurarnos de que la base de datos esté lista con IPv4 antes de iniciar Baileys
     if (!pool) {
         await initDatabase();
     }
@@ -178,10 +167,9 @@ async function startBot() {
     const sock = makeWASocket({
         auth: state,
         printQRInTerminal: true,
-        logger: pino({ level: 'silent' }) // Silencia logs para ahorrar memoria en Render
+        logger: pino({ level: 'silent' })
     });
 
-    // Manejo de conexión y generación del código QR para la web de Render
     sock.ev.on('connection.update', async (update) => {
         const { connection, lastDisconnect, qr } = update;
 
@@ -197,7 +185,7 @@ async function startBot() {
             console.log('Conexión cerrada. Razón:', reason);
             
             if (reason !== DisconnectReason.loggedOut) {
-                setTimeout(startBot, 5000); // Añadido un pequeño respiro de 5s para evitar bucles de CPU en Render
+                setTimeout(startBot, 5000);
             } else {
                 console.log('Sesión cerrada manualmente.');
             }
@@ -210,7 +198,6 @@ async function startBot() {
 
     sock.ev.on('creds.update', saveCreds);
 
-    // Función de transición similar a enviarConEscritura
     async function enviarRespuesta(remoteJid, contenido) {
         try {
             await sock.sendMessage(remoteJid, { text: "⏳ Buscando la información..." });
@@ -222,7 +209,6 @@ async function startBot() {
         }
     }
 
-    // Escuchar los mensajes entrantes con toda la lógica de tus opciones
     sock.ev.on('messages.upsert', async ({ messages, type }) => {
         if (type !== 'notify') return;
 
@@ -235,14 +221,12 @@ async function startBot() {
 
         console.log(`Mensaje recibido de ${remoteJid}: ${textoUsuario}`);
 
-        // Menú principal
         if (textoUsuario === 'hola' || textoUsuario === 'menu' || textoUsuario === '0' || textoUsuario === 'regresar') {
             const textoMenu = leerArchivo('menu.txt');
             await enviarRespuesta(remoteJid, textoMenu);
             return;
         }
 
-        // Opción 1: Actividades
         if (textoUsuario === '1') {
             const textoActividad = leerArchivo('actividades.txt');
             const respuesta1 = `${textoActividad}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
@@ -250,7 +234,6 @@ async function startBot() {
             return;
         }
 
-        // Opción 2: Colaboración
         if (textoUsuario === '2') {
             const textoColab = leerArchivo('colaboracion.txt');
             const respuesta2 = `${textoColab}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
@@ -258,7 +241,6 @@ async function startBot() {
             return;
         }
 
-        // Opción 3: Palabra de aliento (versículo al azar)
         if (textoUsuario === '3') {
             const versiculoDelDia = obtenerVersiculoAleatorio();
             const respuesta3 = `📖 *Palabra de Aliento para Hoy*\n\n${versiculoDelDia}\n\nRecuerde que usted es una persona muy valiosa y especial para el Señor y para nosotros. ¡Dios le bendiga grande y ricamente hoy! ✨\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
@@ -266,7 +248,6 @@ async function startBot() {
             return;
         }
 
-        // Opción 4: Contacto humano
         if (textoUsuario === '4') {
             const textoTelefonos = leerArchivo('contacto_telefonos.txt');
             const respuesta4 = `${textoTelefonos}\n\n-------------------\n👉 *Para volver al menú principal, escriba el número* **0**`;
@@ -274,7 +255,6 @@ async function startBot() {
             return;
         }
 
-        // Opción 5: Audio especial (saludo.mp4)
         if (textoUsuario === '5') {
             await enviarRespuesta(remoteJid, "🎵 Con mucho cariño, aquí le compartimos este audio:");
             try {
@@ -297,7 +277,6 @@ async function startBot() {
             return;
         }
 
-        // Si escriben cualquier otra cosa
         const textoError = leerArchivo('error.txt');
         await enviarRespuesta(remoteJid, textoError);
     });
