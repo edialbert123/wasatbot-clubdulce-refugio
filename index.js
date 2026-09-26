@@ -23,7 +23,7 @@ async function initDatabase() {
             host: ipv4Address, // Usamos la IP numérica directa en lugar del texto del dominio
             database: 'postgres',
             user: 'postgres',
-            password: process.env.DB_PASSWORD || 'TU_CONTRASEÑA_AQUI', 
+            password: process.env.DB_PASSWORD || 'yerartyerot', 
             port: 6543, 
             ssl: { rejectUnauthorized: false }
         });
