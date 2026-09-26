@@ -6,21 +6,26 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
+const dns = require('dns').promises;
 
 let pool;
 
-// Inicializar la conexión a Supabase usando el Pooler (Puerto 6543) y forzando IPv4
+// Inicializar la conexión a Supabase forzando resolución IPv4 pura
 async function initDatabase() {
     try {
-        console.log('Conectando a Supabase mediante el Pooler (Puerto 6543)...');
+        console.log('Resolviendo IP de Supabase de forma forzada para IPv4...');
+        // Forzamos a obtener la IP numérica IPv4 del host de Supabase
+        const addresses = await dns.resolve4('db.miksinnxsphcwhabtxmc.supabase.co');
+        const ipv4Address = addresses[0];
+        console.log(`¡IP IPv4 encontrada: ${ipv4Address} para el puerto 6543!`);
+
         pool = new Pool({
-            host: 'db.miksinnxsphcwhabtxmc.supabase.co',
+            host: ipv4Address, // Usamos la IP numérica directa en lugar del texto del dominio
             database: 'postgres',
             user: 'postgres',
-            password: process.env.DB_PASSWORD || 'yerartyerot', // Reemplaza aquí con tu contraseña real o usa variables de entorno en Render
-            port: 6543, // Puerto pooler para evitar bloqueos en Render
-            ssl: { rejectUnauthorized: false },
-            family: 4 // Fuerza IPv4 y evita ENETUNREACH
+            password: process.env.DB_PASSWORD || 'TU_CONTRASEÑA_AQUI', 
+            port: 6543, 
+            ssl: { rejectUnauthorized: false }
         });
 
         await pool.query('SELECT NOW()');
