@@ -32,7 +32,7 @@ async function initDatabase() {
             host: 'db.miksinnxsphcwhabtxmc.supabase.co',
             database: 'postgres',
             user: 'postgres',
-            password: 'marachacucha',
+            password: 'yerartyerot', // Corregido el error tipográfico del respaldo
             port: 5432,
             ssl: { rejectUnauthorized: false },
             family: 4
@@ -197,7 +197,7 @@ async function startBot() {
             console.log('Conexión cerrada. Razón:', reason);
             
             if (reason !== DisconnectReason.loggedOut) {
-                startBot();
+                setTimeout(startBot, 5000); // Añadido un pequeño respiro de 5s para evitar bucles de CPU en Render
             } else {
                 console.log('Sesión cerrada manualmente.');
             }
