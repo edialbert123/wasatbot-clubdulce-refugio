@@ -6,28 +6,19 @@ const pino = require('pino');
 const fs = require('fs');
 const path = require('path');
 const { Pool } = require('pg');
-const dns = require('dns').promises;
 
-let pool;
+// 🔐 COLOCA AQUÍ TU CONTRASEÑA REAL DE SUPABASE (reemplaza [TU-PASSWORD])
+// O también puedes dejarlo leyendo la variable de entorno process.env.DATABASE_URL si la configuras en Render
+const connectionString = process.env.DATABASE_URL || 'postgresql://postgres:yerartyerot@db.miksinnxsphcwhabtxmc.supabase.co:6543/postgres';
 
-// Inicializar la conexión a Supabase forzando resolución IPv4 pura
+const pool = new Pool({
+    connectionString,
+    ssl: { rejectUnauthorized: false }
+});
+
+// Función para verificar la conexión a la base de datos
 async function initDatabase() {
     try {
-        console.log('Resolviendo IP de Supabase de forma forzada para IPv4...');
-        // Forzamos a obtener la IP numérica IPv4 del host de Supabase
-        const addresses = await dns.resolve4('db.miksinnxsphcwhabtxmc.supabase.co');
-        const ipv4Address = addresses[0];
-        console.log(`¡IP IPv4 encontrada: ${ipv4Address} para el puerto 6543!`);
-
-        pool = new Pool({
-            host: ipv4Address, // Usamos la IP numérica directa en lugar del texto del dominio
-            database: 'postgres',
-            user: 'postgres',
-            password: process.env.DB_PASSWORD || 'yerartyerot', 
-            port: 6543, 
-            ssl: { rejectUnauthorized: false }
-        });
-
         await pool.query('SELECT NOW()');
         console.log('¡Conexión exitosa con la base de datos de Supabase!');
     } catch (error) {
@@ -163,9 +154,7 @@ function obtenerVersiculoAleatorio() {
 }
 
 async function startBot() {
-    if (!pool) {
-        await initDatabase();
-    }
+    await initDatabase();
 
     const { state, saveCreds } = await usePostgresAuthState();
 
