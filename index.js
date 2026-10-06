@@ -179,24 +179,4 @@ async function startBot() {
     });
 }
 
-// Función para mantener viva la conexión a la BD (evitar pausa por inactividad)
-function mantenerBaseDeDatosViva() {
-    if (pool) {
-        setInterval(async () => {
-            try {
-                // Hacemos una consulta super simple para generar tráfico
-                await pool.query('SELECT NOW()');
-                console.log('✓ Ping de mantenimiento a Supabase enviado.');
-            } catch (err) {
-                console.error('✗ Error en ping de mantenimiento:', err.message);
-            }
-        }, 6 * 60 * 60 * 1000); // Cada 6 horas
-    }
-}
-
-// Modifica tu función startBot() para llamar a esta nueva función al final
-
-
 startBot();
-mantenerBaseDeDatosViva();
-
