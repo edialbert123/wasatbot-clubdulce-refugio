@@ -57,6 +57,9 @@ function obtenerVersiculoAleatorio() {
     return versiculos[indiceAleatorio];
 }
 
+// Filtro global para evitar que se procese el mismo mensaje dos veces en algunos teléfonos
+const mensajesProcesados = new Set();
+
 async function startBot() {
     // Usamos almacenamiento local de sesión (auth_info_baileys) en lugar de Supabase
     const { state, saveCreds } = await useMultiFileAuthState('auth_info_baileys');
@@ -112,9 +115,18 @@ async function startBot() {
         const msg = messages[0];
         if (!msg.message || msg.key.fromMe) return;
 
+        // --- INICIO DEL FILTRO ANTI-DUPLICADOS ---
+        const messageId = msg.key.id;
+        if (mensajesProcesados.has(messageId)) return;
+        mensajesProcesados.add(messageId);
+
+        // Limpiar el registro automáticamente cada 10 minutos para no saturar memoria
+        setTimeout(() => mensajesProcesados.delete(messageId), 10 * 60 * 1000);
+        // --- FIN DEL FILTRO ---
+
         const remoteJid = msg.key.remoteJid;
         const textoUsuario = (msg.message.conversation || 
-                            msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
+                              msg.message.extendedTextMessage?.text || '').trim().toLowerCase();
 
         console.log(`Mensaje recibido de ${remoteJid}: ${textoUsuario}`);
 
